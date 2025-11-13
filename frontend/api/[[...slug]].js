@@ -23,11 +23,23 @@ function json(res, data, status = 200) {
 module.exports = async (req, res) => {
   // Support both /api and nested paths via catch-all [[...slug]].js
   const method = (req.method || 'GET').toUpperCase();
-  const path = '/' + (Array.isArray(req.query.slug) ? req.query.slug.join('/') : (req.query.slug || ''));
+  // Resolve path robustly from slug or raw URL
+  let path = '/' + (Array.isArray(req.query.slug) ? req.query.slug.join('/') : (req.query.slug || ''));
+  if (!path || path === '/') {
+    const raw = (req.url || '').split('?')[0] || '';
+    if (raw) {
+      if (raw.startsWith('/api')) {
+        const trimmed = raw.slice(4);
+        path = trimmed || '/';
+      } else {
+        path = raw || '/';
+      }
+    }
+  }
 
   try {
     // Health
-    if (method === 'GET' && path === '/health') return json(res, generateHealth());
+    if (method === 'GET' && (path === '/health' || path === '/health/')) return json(res, generateHealth());
 
     // Trading signals
     if (method === 'GET' && path.startsWith('/trading-signals/')) {
