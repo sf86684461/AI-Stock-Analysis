@@ -2,6 +2,8 @@ import axios from 'axios';
 
 // 智能API配置：同源访问以兼容本地代理与 Vercel Functions
 const FAST_API_URL = '';
+// 运行环境检测：仅在本地才尝试 7001 真实服务
+const IS_LOCAL = (typeof window !== 'undefined') && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
 // 创建统一的API实例（指向快速API服务）
 const apiInstance = axios.create({
@@ -78,48 +80,44 @@ fastApi.interceptors.response.use(
 export const fetchTradingSignals = async (stockCode) => {
   console.log(`📊 获取交易信号: ${stockCode}`);
   
-  // 1. 优先使用TuShare真实数据API（5000端口）
-  try {
-    console.log('🔥 优先使用TuShare真实数据API...');
-    // 兼容真实服务路径：优先 /api/trading-signals，失败回退 /trading_signals
-    let response;
+  // 1) 本地优先真实API；2) 线上直接使用快速API
+  if (IS_LOCAL) {
     try {
-      response = await realDataApi.post('/api/trading-signals', {
-        stock_code: stockCode
-      }, {
-        timeout: 300000, // 5分钟超时，确保TuShare数据充分获取
-      });
-    } catch (pathErr) {
-      response = await realDataApi.post('/trading_signals', {
-        stock_code: stockCode
-      }, {
-        timeout: 300000, // 5分钟超时，确保TuShare数据充分获取
-      });
-    }
-    
-    if (response.data.success && response.data.all_signals) {
-      console.log('✅ TuShare真实数据获取成功！');
-      const enhancedData = enhanceDataForBollinger(response.data);
-      return enhancedData;
-    }
-    throw new Error('真实数据API返回格式异常');
-  } catch (error) {
-    console.warn('⚠️ 真实数据API获取失败，尝试快速API兜底:', error.message);
-    // 2. 兜底：使用快速响应API（5001端口）
-    try {
-      console.log('⚡ 使用快速响应API兜底...');
-      const fastResponse = await fastApi.get(`/api/trading-signals/${stockCode}`);
-      if (fastResponse.data.success && fastResponse.data.data) {
-        const convertedData = convertFastApiData(fastResponse.data.data, stockCode);
-        console.log('✅ 快速API兜底成功');
-        return convertedData;
+      console.log('🔥 [本地] 优先使用TuShare真实数据API...');
+      // 兼容真实服务路径：优先 /api/trading-signals，失败回退 /trading_signals
+      let response;
+      try {
+        response = await realDataApi.post('/api/trading-signals', {
+          stock_code: stockCode
+        }, {
+          timeout: 300000,
+        });
+      } catch (pathErr) {
+        response = await realDataApi.post('/trading_signals', {
+          stock_code: stockCode
+        }, {
+          timeout: 300000,
+        });
       }
-      throw new Error('快速API返回格式异常');
-    } catch (fastError) {
-      console.error('❌ 所有API都失败了:', fastError.message);
-      throw new Error(`数据获取失败: 真实API(${error.message}), 快速API(${fastError.message})`);
+      if (response.data.success && response.data.all_signals) {
+        console.log('✅ TuShare真实数据获取成功！');
+        const enhancedData = enhanceDataForBollinger(response.data);
+        return enhancedData;
+      }
+      throw new Error('真实数据API返回格式异常');
+    } catch (error) {
+      console.warn('⚠️ 本地真实数据API获取失败，尝试快速API兜底:', error.message);
+      // 继续走快速API
     }
   }
+  // 快速响应API（同源 /api）
+  const fastResponse = await fastApi.get(`/api/trading-signals/${stockCode}`);
+  if (fastResponse.data.success && fastResponse.data.data) {
+    const convertedData = convertFastApiData(fastResponse.data.data, stockCode);
+    console.log('✅ 快速API成功');
+    return convertedData;
+  }
+  throw new Error('快速API返回格式异常');
 };
 
 // 增强TuShare数据以支持BOLL显示
@@ -363,48 +361,51 @@ export const stockAPI = {
   searchStocks: async (query, limit = 8) => {
     try {
       console.log(`🔍 搜索股票: "${query}", 限制: ${limit}`);
-      // 优先使用真实服务 7001
-      const response = await realDataApi.get('/api/search_stocks', {
-        params: { q: query, limit }
-      });
-      console.log('🔍 搜索结果(7001):', response.data);
-      return response.data;
-    } catch (error) {
-      const status = error?.response?.status;
-      console.warn('⚠️ 7001 搜索失败，状态:', status, '消息:', error?.message);
-      // 兜底：使用 5001 的 market-overview 进行关键词过滤并映射为搜索结果
-      try {
-        const resp = await fastApi.post('/api/market-overview', {
-          page: 1,
-          page_size: Math.max(10, limit),
-          keyword: query,
-          real_data: true,
-          sort_field: 'score',
-          sort_order: 'desc'
-        }, { timeout: 60000 });
-        const stocks = (resp?.data?.data?.stocks || []).slice(0, limit).map(s => ({
-          code: s.code || (s.ts_code ? s.ts_code.split('.')[0] : ''),
-          ts_code: s.ts_code || '',
-          name: s.name || '',
-          market: s.market || '',
-          industry: s.industry || ''
-        }));
-        const mapped = {
-          success: true,
-          stocks,
-          total: (resp?.data?.data?.total != null) ? resp.data.data.total : stocks.length,
-          message: '快速API兜底搜索'
-        };
-        console.log('✅ 5001 兜底搜索成功:', mapped);
-        return mapped;
-      } catch (fallbackError) {
-        console.error('❌ 搜索兜底失败:', fallbackError?.message);
-        return {
-          success: false,
-          stocks: [],
-          message: '搜索服务暂时不可用'
-        };
+      if (IS_LOCAL) {
+        try {
+          // 本地优先真实服务 7001
+          const response = await realDataApi.get('/api/search_stocks', {
+            params: { q: query, limit }
+          });
+          console.log('🔍 搜索结果(7001):', response.data);
+          return response.data;
+        } catch (error) {
+          const status = error?.response?.status;
+          console.warn('⚠️ 7001 搜索失败，状态:', status, '消息:', error?.message);
+          // 继续走快速API
+        }
       }
+      // 兜底：使用 5001 的 market-overview 进行关键词过滤并映射为搜索结果
+      const resp = await fastApi.post('/api/market-overview', {
+        page: 1,
+        page_size: Math.max(10, limit),
+        keyword: query,
+        real_data: true,
+        sort_field: 'score',
+        sort_order: 'desc'
+      }, { timeout: 60000 });
+      const stocks = (resp?.data?.data?.stocks || []).slice(0, limit).map(s => ({
+        code: s.code || (s.ts_code ? s.ts_code.split('.')[0] : ''),
+        ts_code: s.ts_code || '',
+        name: s.name || '',
+        market: s.market || '',
+        industry: s.industry || ''
+      }));
+      const mapped = {
+        success: true,
+        stocks,
+        total: (resp?.data?.data?.total != null) ? resp.data.data.total : stocks.length,
+        message: '快速API兜底搜索'
+      };
+      console.log('✅ 5001 兜底搜索成功:', mapped);
+      return mapped;
+    } catch (error) {
+      console.error('❌ 搜索兜底失败:', error?.message);
+      return {
+        success: false,
+        stocks: [],
+        message: '搜索服务暂时不可用'
+      };
     }
   },
 
@@ -603,19 +604,17 @@ export const strategyAPI = {
 // 全市场数据获取函数
 export const getMarketOverview = async (params) => {
   console.log('🔍 正在获取全市场数据...', params);
-  // 正常策略：优先使用真实服务(7001)，失败再兜底快速API(5001)
-  try {
-    const response = await realDataApi.post('/api/market-overview', params, {
-      timeout: 300000
-    });
-    return response;
-  } catch (error) {
-    console.warn('⚠️ 真实服务获取失败，尝试快速API兜底:', error.message);
-    const response = await fastApi.post('/api/market-overview', params, {
-      timeout: 300000
-    });
-    return response;
+  // 本地优先真实服务；线上直接快速API
+  if (IS_LOCAL) {
+    try {
+      const response = await realDataApi.post('/api/market-overview', params, { timeout: 300000 });
+      return response;
+    } catch (error) {
+      console.warn('⚠️ 本地真实服务获取失败，尝试快速API兜底:', error.message);
+    }
   }
+  const response = await fastApi.post('/api/market-overview', params, { timeout: 300000 });
+  return response;
 };
 
 // 默认导出快速API实例

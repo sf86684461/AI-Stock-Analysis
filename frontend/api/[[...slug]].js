@@ -47,6 +47,41 @@ module.exports = async (req, res) => {
       return json(res, generateTradingSignals(code));
     }
 
+    // Advanced strategies execute (for StrategyResultDisplay)
+    if (method === 'POST' && path === '/advanced-strategies/execute') {
+      const base = generateStrategyExecute(req.body || {});
+      const stocks = (base.data?.results || []).map((s) => ({
+        stock_code: s.stock_code,
+        stock_name: s.stock_name,
+        exchange: s.stock_code.endsWith('.SH') ? 'SH' : 'SZ',
+        score: s.strategy_score,
+        pe: s.pe,
+        pb: s.pb,
+        roe: s.roe,
+        market_cap: s.market_cap,
+        data_source: 'mock',
+        analysis_time: new Date().toISOString()
+      }));
+      const payload = req.body || {};
+      return json(res, {
+        success: true,
+        strategy_info: {
+          id: payload.strategy_id || 'mock_strategy',
+          name: payload.strategy_name || 'Mock策略'
+        },
+        scan_summary: {
+          rules: payload.parameters || {},
+          remark: '基于Mock数据的策略扫描结果，仅用于演示'
+        },
+        qualified_stocks: stocks,
+        top_30_stocks: stocks.slice(0, 30),
+        data_sources: { akshare: Math.floor(stocks.length * 0.6), tushare: Math.floor(stocks.length * 0.4) },
+        total_analyzed: stocks.length + 80,
+        data_quality: 97.2,
+        execution_time: 6
+      });
+    }
+
     // Market overview
     if (method === 'POST' && path === '/market-overview') {
       return json(res, generateMarketOverview(req.body || {}));
