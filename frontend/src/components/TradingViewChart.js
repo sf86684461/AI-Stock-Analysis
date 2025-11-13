@@ -378,34 +378,73 @@ const TradingViewChart = ({ allStockData, stockInfo, allSignals }) => {
         return;
       }
 
-      // 添加布林带上轨
-      const upperBandSeries = chart.addLineSeries({
-        color: 'rgba(255, 82, 82, 0.8)',
-        lineWidth: 1,
-        title: 'BOLL上轨',
-        priceLineVisible: false,
-        lastValueVisible: true,
-      });
+      // 添加布林带上轨（兼容 v4/v5）
+      let upperBandSeries;
+      if (typeof chart.addLineSeries === 'function') {
+        upperBandSeries = chart.addLineSeries({
+          color: 'rgba(255, 82, 82, 0.8)',
+          lineWidth: 1,
+          title: 'BOLL上轨',
+          priceLineVisible: false,
+          lastValueVisible: true,
+        });
+      } else if (typeof chart.addSeries === 'function') {
+        upperBandSeries = chart.addSeries(LineSeries, {
+          color: 'rgba(255, 82, 82, 0.8)',
+          lineWidth: 1,
+          title: 'BOLL上轨',
+          priceLineVisible: false,
+          lastValueVisible: true,
+        });
+      } else {
+        throw new Error('无法创建布林带上轨：不支持的方法');
+      }
       upperBandSeries.setData(bollingerData.upper);
 
-      // 添加布林带中轨（20日均线）
-      const middleBandSeries = chart.addLineSeries({
-        color: 'rgba(33, 150, 243, 0.8)',
-        lineWidth: 2,
-        title: 'BOLL中轨',
-        priceLineVisible: false,
-        lastValueVisible: true,
-      });
+      // 添加布林带中轨（20日均线）（兼容 v4/v5）
+      let middleBandSeries;
+      if (typeof chart.addLineSeries === 'function') {
+        middleBandSeries = chart.addLineSeries({
+          color: 'rgba(33, 150, 243, 0.8)',
+          lineWidth: 2,
+          title: 'BOLL中轨',
+          priceLineVisible: false,
+          lastValueVisible: true,
+        });
+      } else if (typeof chart.addSeries === 'function') {
+        middleBandSeries = chart.addSeries(LineSeries, {
+          color: 'rgba(33, 150, 243, 0.8)',
+          lineWidth: 2,
+          title: 'BOLL中轨',
+          priceLineVisible: false,
+          lastValueVisible: true,
+        });
+      } else {
+        throw new Error('无法创建布林带中轨：不支持的方法');
+      }
       middleBandSeries.setData(bollingerData.middle);
 
-      // 添加布林带下轨
-      const lowerBandSeries = chart.addLineSeries({
-        color: 'rgba(76, 175, 80, 0.8)',
-        lineWidth: 1,
-        title: 'BOLL下轨',
-        priceLineVisible: false,
-        lastValueVisible: true,
-      });
+      // 添加布林带下轨（兼容 v4/v5）
+      let lowerBandSeries;
+      if (typeof chart.addLineSeries === 'function') {
+        lowerBandSeries = chart.addLineSeries({
+          color: 'rgba(76, 175, 80, 0.8)',
+          lineWidth: 1,
+          title: 'BOLL下轨',
+          priceLineVisible: false,
+          lastValueVisible: true,
+        });
+      } else if (typeof chart.addSeries === 'function') {
+        lowerBandSeries = chart.addSeries(LineSeries, {
+          color: 'rgba(76, 175, 80, 0.8)',
+          lineWidth: 1,
+          title: 'BOLL下轨',
+          priceLineVisible: false,
+          lastValueVisible: true,
+        });
+      } else {
+        throw new Error('无法创建布林带下轨：不支持的方法');
+      }
       lowerBandSeries.setData(bollingerData.lower);
 
       console.log('布林带指标添加成功');
@@ -559,10 +598,14 @@ const TradingViewChart = ({ allStockData, stockInfo, allSignals }) => {
       // 6. 添加技术指标交叉点标记
       addTechnicalCrossSignals(markers, processedData, signals);
 
-      // 应用标记
+      // 应用标记（兼容性检测）
       if (markers.length > 0) {
-        candlestickSeries.setMarkers(markers);
-        console.log(`已添加 ${markers.length} 个增强版交易信号标记`);
+        if (candlestickSeries && typeof candlestickSeries.setMarkers === 'function') {
+          candlestickSeries.setMarkers(markers);
+          console.log(`已添加 ${markers.length} 个增强版交易信号标记`);
+        } else {
+          console.warn('candlestickSeries 不支持 setMarkers，跳过标记应用');
+        }
       } else {
         console.log('未生成任何交易信号标记');
       }
@@ -1042,9 +1085,16 @@ const TradingViewChart = ({ allStockData, stockInfo, allSignals }) => {
 
       console.log('Processed data sample:', processedData.slice(0, 3));
 
-      // 创建主K线图表
-      const priceChartResult = createChart(priceChartContainerRef.current, {
-        width: priceChartContainerRef.current.offsetWidth,
+      // 创建主K线图表（容器类型守卫）
+      const priceEl = priceChartContainerRef.current;
+      if (!(priceEl instanceof HTMLElement)) {
+        console.error('价格图容器不是有效的 HTMLElement:', priceEl);
+        setError('价格图容器未就绪，请稍后重试');
+        setLoading(false);
+        return;
+      }
+      const priceChartResult = createChart(priceEl, {
+        width: priceEl.offsetWidth,
         height: 400,
         layout: {
           background: { type: ColorType.Solid, color: '#253654' },
@@ -1192,9 +1242,16 @@ const TradingViewChart = ({ allStockData, stockInfo, allSignals }) => {
         ma20Series.setData(ma20Data);
       }
 
-      // 创建成交量图表
-      const volumeChartResult = createChart(volumeChartContainerRef.current, {
-        width: volumeChartContainerRef.current.offsetWidth,
+      // 创建成交量图表（容器类型守卫）
+      const volumeEl = volumeChartContainerRef.current;
+      if (!(volumeEl instanceof HTMLElement)) {
+        console.error('成交量容器不是有效的 HTMLElement:', volumeEl);
+        setError('成交量容器未就绪，请稍后重试');
+        setLoading(false);
+        return;
+      }
+      const volumeChartResult = createChart(volumeEl, {
+        width: volumeEl.offsetWidth,
         height: 200,
         layout: {
           background: { type: ColorType.Solid, color: '#253654' },
@@ -1282,9 +1339,16 @@ const TradingViewChart = ({ allStockData, stockInfo, allSignals }) => {
 
       volumeSeries.setData(volumeData);
 
-      // 创建MACD图表
-      const macdChartResult = createChart(macdChartContainerRef.current, {
-        width: macdChartContainerRef.current.offsetWidth,
+      // 创建MACD图表（容器类型守卫）
+      const macdEl = macdChartContainerRef.current;
+      if (!(macdEl instanceof HTMLElement)) {
+        console.error('MACD容器不是有效的 HTMLElement:', macdEl);
+        setError('MACD容器未就绪，请稍后重试');
+        setLoading(false);
+        return;
+      }
+      const macdChartResult = createChart(macdEl, {
+        width: macdEl.offsetWidth,
         height: 200,
         layout: {
           background: { type: ColorType.Solid, color: '#253654' },

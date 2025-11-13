@@ -1,0 +1,33 @@
+# OS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Node
+node_modules/
+**/node_modules/
+**/.cache/
+frontend/build/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Env
+.env
+.env.*
+
+# Vercel local
+.vercel/
+
+# Coverage/Dist
+coverage/
+dist/

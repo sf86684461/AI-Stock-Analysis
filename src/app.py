@@ -2504,5 +2504,14 @@ def market_overview():
             'error_type': type(e).__name__
         })
 
+# 兼容前端路由与CORS预检：提供 /api/trading-signals 别名，并返回 OPTIONS 200
+@app.route('/api/trading-signals', methods=['POST', 'OPTIONS'])
+def api_trading_signals():
+    # 预检请求直接返回 200，Flask-CORS 会自动附加允许头
+    if request.method == 'OPTIONS':
+        return ('', 200)
+    # 复用现有交易信号实现
+    return get_trading_signals()
+
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000) 
+    app.run(debug=False, host='0.0.0.0', port=7001) 

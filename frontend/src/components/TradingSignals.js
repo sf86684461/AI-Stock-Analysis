@@ -188,6 +188,135 @@ const TradingSignals = ({ allSignals, comprehensiveAdvice, backtestResult }) => 
     return String(value);
   };
 
+  // 数值格式化工具
+  const formatNum = (v, unit = '') => {
+    if (v === null || v === undefined || Number.isNaN(Number(v))) return '-';
+    return `${Number(v).toFixed(2)}${unit}`;
+  };
+  const formatPercent = (v) => {
+    if (v === null || v === undefined || Number.isNaN(Number(v))) return '-';
+    return `${Number(v * 100).toFixed(1)}%`;
+  };
+
+  // 指标中文分行渲染
+  const renderIndicatorItem = (key, value) => {
+    const lv = value?.latest_values || {};
+    const signals = value?.signals || [];
+    const labelMap = {
+      bollinger: '布林带',
+      chip: '筹码',
+      fundamental: '基本面',
+      ma: '均线',
+      macd: 'MACD',
+      pe: '估值(PE)',
+      rsi: 'RSI',
+      volume: '成交量'
+    };
+    const label = labelMap[key] || key;
+    const rows = [];
+
+    switch (key) {
+      case 'bollinger': {
+        rows.push(`上轨：${formatNum(lv.upper, '元')}`);
+        rows.push(`中轨：${formatNum(lv.middle, '元')}`);
+        rows.push(`下轨：${formatNum(lv.lower, '元')}`);
+        if (lv.position !== undefined) rows.push(`价格位置：${formatNum(lv.position, '元')}`);
+        break;
+      }
+      case 'chip': {
+        rows.push(`主力成本：${formatNum(lv.main_peak_price, '元')}`);
+        rows.push(`平均成本：${formatNum(lv.avg_price, '元')}`);
+        rows.push(`压力位：${formatNum(lv.pressure_level, '元')}`);
+        rows.push(`支撑位：${formatNum(lv.support_level, '元')}`);
+        if (lv.concentration !== undefined) rows.push(`筹码集中度：${formatPercent(lv.concentration)}`);
+        break;
+      }
+      case 'fundamental': {
+        const ind = lv.indicators || value?.indicators || {};
+        Object.entries(ind).slice(0, 6).forEach(([k, v]) => {
+          const unit = /率|ROE|换手/.test(k) ? (typeof v === 'number' ? '%' : '') : '';
+          rows.push(`${k}：${typeof v === 'number' ? (unit === '%' ? `${v.toFixed(2)}%` : v.toFixed(2)) : v}`);
+        });
+        break;
+      }
+      case 'ma': {
+        rows.push(`MA5：${formatNum(lv.MA5 ?? lv.ma5, '元')}`);
+        rows.push(`MA10：${formatNum(lv.MA10 ?? lv.ma10, '元')}`);
+        rows.push(`MA20：${formatNum(lv.MA20 ?? lv.ma20, '元')}`);
+        rows.push(`MA60：${formatNum(lv.MA60 ?? lv.ma60, '元')}`);
+        break;
+      }
+      case 'macd': {
+        // 支持 histogram/macd/signal
+        if (lv.dif !== undefined || lv.dea !== undefined || lv.macd !== undefined) {
+          if (lv.dif !== undefined) rows.push(`DIF：${formatNum(lv.dif)}`);
+          if (lv.dea !== undefined) rows.push(`DEA：${formatNum(lv.dea)}`);
+          if (lv.macd !== undefined) rows.push(`MACD：${formatNum(lv.macd)}`);
+        } else {
+          rows.push(`MACD：${formatNum(lv.macd)}`);
+          rows.push(`Signal：${formatNum(lv.signal)}`);
+          rows.push(`柱状图：${formatNum(lv.histogram)}`);
+        }
+        break;
+      }
+      case 'pe': {
+        rows.push(`当前PE：${formatNum(value?.current_pe ?? lv.current_pe, '倍')}`);
+        const pd = value?.pe_data || lv.pe_data || {};
+        if (pd.pe !== undefined) rows.push(`PE：${formatNum(pd.pe, '倍')}`);
+        if (pd.pb !== undefined) rows.push(`PB：${formatNum(pd.pb, '倍')}`);
+        if (pd.current_price !== undefined) rows.push(`当前价：${formatNum(pd.current_price, '元')}`);
+        break;
+      }
+      case 'rsi': {
+        const rsiVal = lv.latest_value ?? value?.latest_value;
+        if (rsiVal !== undefined) rows.push(`RSI：${formatNum(rsiVal)}`);
+        break;
+      }
+      case 'volume': {
+        if (lv.volume !== undefined) {
+          const v = Number(String(lv.volume).replace(/,/g, ''));
+          const formatted = Number.isFinite(v)
+            ? (v >= 1e8 ? `${(v / 1e8).toFixed(2)}亿` : `${(v / 1e4).toFixed(2)}万`)
+            : '-';
+          rows.push(`成交量：${formatted}`);
+        }
+        if (lv.ratio !== undefined) rows.push(`量比：${formatNum(lv.ratio, '倍')}`);
+        break;
+      }
+      default: {
+        // 其他类型：展示 latest_values 的前几个键
+        Object.entries(lv).slice(0, 4).forEach(([k, v]) => {
+          const unit = /price|cost|level|upper|middle|lower|MA\d+/.test(k) ? '元' : '';
+          rows.push(`${k}：${typeof v === 'number' ? formatNum(v, unit) : (v ?? '-')}`);
+        });
+      }
+    }
+
+    return (
+      <Paper sx={{ p: 1, bgcolor: '#000', color: '#fff' }}>
+        <Typography variant="caption" sx={{ color: '#fff' }}>
+          {label}
+        </Typography>
+        <Box sx={{ mt: 0.5 }}>
+          {rows.length === 0 ? (
+            <Typography variant="caption" sx={{ display: 'block' }}>暂无数据</Typography>
+          ) : (
+            rows.map((line, idx) => (
+              <Typography key={idx} variant="body2" sx={{ display: 'block', lineHeight: '22px' }}>
+                {line}
+              </Typography>
+            ))
+          )}
+          {signals.length > 0 && signals.map((s, idx) => (
+            <Typography key={`sig-${idx}`} variant="caption" sx={{ display: 'block' }}>
+              {s}
+            </Typography>
+          ))}
+        </Box>
+      </Paper>
+    );
+  };
+
   // 渲染筹码分布分析
   const renderChipDistribution = () => {
     // 从indicators中获取筹码分布数据
@@ -205,7 +334,7 @@ const TradingSignals = ({ allSignals, comprehensiveAdvice, backtestResult }) => 
     return (
       <Grid container spacing={1}>
         <Grid item xs={6}>
-          <Paper sx={{ p: 1, bgcolor: 'grey.50' }}>
+          <Paper sx={{ p: 1, bgcolor: '#000', color: '#fff' }}>
             <Typography variant="caption" color="text.secondary">
               主力成本
             </Typography>
@@ -215,7 +344,7 @@ const TradingSignals = ({ allSignals, comprehensiveAdvice, backtestResult }) => 
           </Paper>
         </Grid>
         <Grid item xs={6}>
-          <Paper sx={{ p: 1, bgcolor: 'grey.50' }}>
+          <Paper sx={{ p: 1, bgcolor: '#000', color: '#fff' }}>
             <Typography variant="caption" color="text.secondary">
               平均成本
             </Typography>
@@ -225,7 +354,7 @@ const TradingSignals = ({ allSignals, comprehensiveAdvice, backtestResult }) => 
           </Paper>
         </Grid>
         <Grid item xs={6}>
-          <Paper sx={{ p: 1, bgcolor: 'grey.50' }}>
+          <Paper sx={{ p: 1, bgcolor: '#000', color: '#fff' }}>
             <Typography variant="caption" color="text.secondary">
               压力位
             </Typography>
@@ -235,7 +364,7 @@ const TradingSignals = ({ allSignals, comprehensiveAdvice, backtestResult }) => 
           </Paper>
         </Grid>
         <Grid item xs={6}>
-          <Paper sx={{ p: 1, bgcolor: 'grey.50' }}>
+          <Paper sx={{ p: 1, bgcolor: '#000', color: '#fff' }}>
             <Typography variant="caption" color="text.secondary">
               支撑位
             </Typography>
@@ -245,7 +374,7 @@ const TradingSignals = ({ allSignals, comprehensiveAdvice, backtestResult }) => 
           </Paper>
         </Grid>
         <Grid item xs={12}>
-          <Paper sx={{ p: 1, bgcolor: 'grey.50' }}>
+          <Paper sx={{ p: 1, bgcolor: '#000', color: '#fff' }}>
             <Typography variant="caption" color="text.secondary">
               筹码集中度
             </Typography>
@@ -256,7 +385,7 @@ const TradingSignals = ({ allSignals, comprehensiveAdvice, backtestResult }) => 
         </Grid>
         {chipData.analysis && Array.isArray(chipData.analysis) && (
           <Grid item xs={12}>
-            <Paper sx={{ p: 1, bgcolor: 'grey.50' }}>
+            <Paper sx={{ p: 1, bgcolor: '#000', color: '#fff' }}>
               <Typography variant="caption" color="text.secondary">
                 分析要点
               </Typography>
@@ -292,10 +421,54 @@ const TradingSignals = ({ allSignals, comprehensiveAdvice, backtestResult }) => 
     const peInfo = peData.pe_data || peData.latest_values || {};
     const analysis = peData.analysis || [];
 
+    // 兜底计算 EPS 与 ROE
+    const eps = (() => {
+      // 安全数值解析（支持字符串与带逗号）
+      const num = (x) => {
+        if (x === null || x === undefined) return null;
+        const n = typeof x === 'number' ? x : parseFloat(String(x).replace(/,/g, ''));
+        return Number.isFinite(n) ? n : null;
+      };
+      const epsDirect = num(peInfo.eps);
+      if (epsDirect !== null) return epsDirect;
+
+      const price = num(
+        peInfo.current_price ??
+        currentSignals.indicators?.pe?.latest_values?.pe_data?.current_price ??
+        currentSignals.indicators?.pe?.latest_values?.current_price ??
+        null
+      );
+      const curPe = num(peData.current_pe ?? peInfo.pe ?? null);
+
+      if (price !== null && curPe !== null && curPe !== 0) {
+        return price / curPe;
+      }
+      return null;
+    })();
+
+    const roe = (() => {
+      const num = (x) => {
+        if (x === null || x === undefined) return null;
+        const n = typeof x === 'number' ? x : parseFloat(String(x).replace(/,/g, ''));
+        return Number.isFinite(n) ? n : null;
+      };
+      const direct = num(peInfo.roe);
+      if (direct !== null) return direct;
+
+      const fInd =
+        currentSignals.fundamental_analysis?.indicators ||
+        currentSignals.fundamental_indicators?.indicators ||
+        currentSignals.indicators?.fundamental?.latest_values?.indicators ||
+        {};
+      const v = fInd.ROE ?? fInd['净资产收益率'] ?? null;
+      const parsed = num(v);
+      return parsed !== null ? parsed : null;
+    })();
+
     return (
       <Grid container spacing={1}>
         <Grid item xs={6}>
-          <Paper sx={{ p: 1, bgcolor: 'grey.50' }}>
+          <Paper sx={{ p: 1, bgcolor: '#000', color: '#fff' }}>
             <Typography variant="caption" color="text.secondary">
               当前PE
             </Typography>
@@ -305,7 +478,7 @@ const TradingSignals = ({ allSignals, comprehensiveAdvice, backtestResult }) => 
           </Paper>
         </Grid>
         <Grid item xs={6}>
-          <Paper sx={{ p: 1, bgcolor: 'grey.50' }}>
+          <Paper sx={{ p: 1, bgcolor: '#000', color: '#fff' }}>
             <Typography variant="caption" color="text.secondary">
               市净率(PB)
             </Typography>
@@ -315,28 +488,28 @@ const TradingSignals = ({ allSignals, comprehensiveAdvice, backtestResult }) => 
           </Paper>
         </Grid>
         <Grid item xs={6}>
-          <Paper sx={{ p: 1, bgcolor: 'grey.50' }}>
+          <Paper sx={{ p: 1, bgcolor: '#000', color: '#fff' }}>
             <Typography variant="caption" color="text.secondary">
               每股收益(EPS)
             </Typography>
             <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-              {peInfo.eps ? `${peInfo.eps.toFixed(3)}元` : '-'}
+              {typeof eps === 'number' ? `${eps.toFixed(3)}元` : '-'}
             </Typography>
           </Paper>
         </Grid>
         <Grid item xs={6}>
-          <Paper sx={{ p: 1, bgcolor: 'grey.50' }}>
+          <Paper sx={{ p: 1, bgcolor: '#000', color: '#fff' }}>
             <Typography variant="caption" color="text.secondary">
               净资产收益率(ROE)
             </Typography>
             <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-              {peInfo.roe ? `${peInfo.roe.toFixed(2)}%` : '-'}
+              {typeof roe === 'number' ? `${(roe <= 1 ? roe * 100 : roe).toFixed(2)}%` : '-'}
             </Typography>
           </Paper>
         </Grid>
         {analysis && analysis.length > 0 && (
           <Grid item xs={12}>
-            <Paper sx={{ p: 1, bgcolor: 'grey.50' }}>
+            <Paper sx={{ p: 1, bgcolor: '#000', color: '#fff' }}>
               <Typography variant="caption" color="text.secondary">
                 估值分析
               </Typography>
@@ -354,15 +527,14 @@ const TradingSignals = ({ allSignals, comprehensiveAdvice, backtestResult }) => 
     );
   };
 
-  // 渲染基本面分析
+  // 渲染基本面分析（严格中文分行与单位规范）
   const renderFundamentalAnalysis = () => {
-    // 从fundamental_analysis或fundamental_indicators中获取数据
-    const fundamentalData = currentSignals.fundamental_analysis || 
-                           currentSignals.fundamental_indicators ||
-                           currentSignals.indicators?.fundamental?.latest_values ||
-                           allSignals[selectedPeriod]?.fundamental_indicators;
-    
-    if (!fundamentalData || Object.keys(fundamentalData).length === 0) {
+    const fd = currentSignals.fundamental_analysis ||
+               currentSignals.fundamental_indicators ||
+               currentSignals.indicators?.fundamental?.latest_values ||
+               allSignals[selectedPeriod]?.fundamental_indicators;
+
+    if (!fd || Object.keys(fd).length === 0) {
       return (
         <Alert severity="info" sx={{ fontSize: '0.875rem' }}>
           正在获取基本面数据...
@@ -370,37 +542,145 @@ const TradingSignals = ({ allSignals, comprehensiveAdvice, backtestResult }) => 
       );
     }
 
+    const toNum = (x) => {
+      if (x === null || x === undefined) return null;
+      const n = typeof x === 'number' ? x : parseFloat(String(x).replace(/,/g, ''));
+      return Number.isFinite(n) ? n : null;
+    };
+    const times = (n) => (n == null ? '-' : `${toNum(n).toFixed(2)}倍`);
+    const pct = (n) => {
+      if (n == null) return '-';
+      const v = toNum(n);
+      // 支持后端给 0.43 或 43 两种
+      const p = v <= 1 ? v * 100 : v;
+      return `${p.toFixed(2)}%`;
+    };
+    const yuan = (n) => (n == null ? '-' : `${toNum(n).toFixed(2)}元`);
+    const moneyCompact = (n) => {
+      const v = toNum(n);
+      if (v == null) return '-';
+      if (v >= 1e8) return `${(v / 1e8).toFixed(2)}亿元`;
+      return `${(v / 1e4).toFixed(2)}万元`;
+    };
+    const sharesCompact = (n) => {
+      const v = toNum(n);
+      if (v == null) return '-';
+      if (v >= 1e8) return `${(v / 1e8).toFixed(2)}亿股`;
+      return `${(v / 1e4).toFixed(2)}万股`;
+    };
+
+    const ind = fd.indicators || {};
+    // 规范键名映射
+    const indicatorItems = [
+      { label: '市盈率(PE)', value: ind['PE市盈率'] ?? ind.PE市盈率 ?? ind.pe, fmt: times },
+      { label: '市净率(PB)', value: ind['PB市净率'] ?? ind.PB市净率 ?? ind.pb, fmt: times },
+      { label: '市销率(PS)', value: ind['PS市销率'] ?? ind.PS市销率 ?? ind.ps, fmt: times },
+      { label: '总市值', value: ind['总市值'] ?? ind.total_market_cap, fmt: moneyCompact },
+      { label: '流通市值', value: ind['流通市值'] ?? ind.circulating_market_cap, fmt: moneyCompact },
+      { label: '总股本', value: ind['总股本'] ?? ind.total_shares, fmt: sharesCompact },
+      { label: '流通股本', value: ind['流通股本'] ?? ind.circulating_shares, fmt: sharesCompact },
+      { label: '换手率', value: ind['换手率'] ?? ind.turnover_rate, fmt: pct },
+      { label: 'ROE(净资产收益率)', value: ind['净资产收益率'] ?? ind.ROE, fmt: pct },
+    ];
+
+    const rating = fd.rating;
+    const ratingScore = toNum(fd.rating_score);
+    const riskLevel = fd.risk_level;
+    const analysis = Array.isArray(fd.analysis) ? fd.analysis : [];
+    const advice = Array.isArray(fd.investment_advice) ? fd.investment_advice : [];
+    const riskFactors = Array.isArray(fd.risk_factors) ? fd.risk_factors : [];
+
     return (
       <Grid container spacing={1}>
-        {Object.entries(fundamentalData).map(([key, value]) => {
-          // 跳过非数据字段
-          if (key === 'analysis' || key === 'investment_advice' || key === 'risk_factors') {
-            return null;
-          }
-          
-          return (
-            <Grid item xs={6} key={key}>
-              <Paper sx={{ p: 1, bgcolor: 'grey.50' }}>
-                <Typography variant="caption" color="text.secondary">
-                  {key}
-                </Typography>
-                <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-                  {renderValue(value)}
-                </Typography>
-              </Paper>
-            </Grid>
-          );
-        })}
-        
-        {/* 显示基本面分析要点 */}
-        {fundamentalData.analysis && Array.isArray(fundamentalData.analysis) && (
+        {/* 关键指标 */}
+        <Grid item xs={12}>
+          <Paper sx={{ p: 1, bgcolor: '#000', color: '#fff' }}>
+            <Typography variant="caption" sx={{ color: '#fff' }}>
+              关键指标
+            </Typography>
+            <Box sx={{ mt: 0.5 }}>
+              {indicatorItems
+                .filter(i => i.value !== undefined && i.value !== null)
+                .map((i, idx) => (
+                  <Typography key={idx} variant="body2" sx={{ display: 'block', lineHeight: '22px' }}>
+                    {i.label}：{i.fmt(i.value)}
+                  </Typography>
+              ))}
+            </Box>
+          </Paper>
+        </Grid>
+
+        {/* 评级与评分 */}
+        <Grid item xs={6}>
+          <Paper sx={{ p: 1, bgcolor: '#000', color: '#fff' }}>
+            <Typography variant="caption" sx={{ color: '#fff' }}>
+              评级
+            </Typography>
+            <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+              {rating ?? '-'}
+            </Typography>
+          </Paper>
+        </Grid>
+        <Grid item xs={6}>
+          <Paper sx={{ p: 1, bgcolor: '#000', color: '#fff' }}>
+            <Typography variant="caption" sx={{ color: '#fff' }}>
+              评分
+            </Typography>
+            <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+              {ratingScore != null ? `${ratingScore.toFixed(2)}分` : '-'}
+            </Typography>
+          </Paper>
+        </Grid>
+
+        {/* 风险等级与因子（若你希望只在风险评估面板显示，可移除这两块） */}
+        <Grid item xs={6}>
+          <Paper sx={{ p: 1, bgcolor: '#000', color: '#fff' }}>
+            <Typography variant="caption" sx={{ color: '#fff' }}>
+              风险等级
+            </Typography>
+            <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+              {riskLevel ?? '-'}
+            </Typography>
+          </Paper>
+        </Grid>
+        <Grid item xs={6}>
+          <Paper sx={{ p: 1, bgcolor: '#000', color: '#fff' }}>
+            <Typography variant="caption" sx={{ color: '#fff' }}>
+              风险因子
+            </Typography>
+            <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+              {riskFactors.length > 0 ? riskFactors.join('，') : '无'}
+            </Typography>
+          </Paper>
+        </Grid>
+
+        {/* 分析要点 */}
+        {analysis.length > 0 && (
           <Grid item xs={12}>
-            <Paper sx={{ p: 1, bgcolor: 'grey.50' }}>
-              <Typography variant="caption" color="text.secondary">
+            <Paper sx={{ p: 1, bgcolor: '#000', color: '#fff' }}>
+              <Typography variant="caption" sx={{ color: '#fff' }}>
                 分析要点
               </Typography>
               <Box sx={{ mt: 0.5 }}>
-                {fundamentalData.analysis.slice(0, 3).map((item, index) => (
+                {analysis.slice(0, 6).map((item, index) => (
+                  <Typography key={index} variant="caption" sx={{ display: 'block' }}>
+                    {item}
+                  </Typography>
+                ))}
+              </Box>
+            </Paper>
+          </Grid>
+        )}
+
+        {/* 投资建议 */}
+        {advice.length > 0 && (
+          <Grid item xs={12}>
+            <Paper sx={{ p: 1, bgcolor: '#000', color: '#fff' }}>
+              <Typography variant="caption" sx={{ color: '#fff' }}>
+                投资建议
+              </Typography>
+              <Box sx={{ mt: 0.5 }}>
+                {advice.slice(0, 6).map((item, index) => (
                   <Typography key={index} variant="caption" sx={{ display: 'block' }}>
                     {item}
                   </Typography>
@@ -434,42 +714,48 @@ const TradingSignals = ({ allSignals, comprehensiveAdvice, backtestResult }) => 
     );
   };
 
+  const stats = (comprehensiveAdvice && comprehensiveAdvice.statistics)
+    ? comprehensiveAdvice.statistics
+    : { buy_count: 0, sell_count: 0, hold_count: 0, total_periods: 0 };
+  const overall = comprehensiveAdvice?.overall_signal || '综合结论';
+  const advice = comprehensiveAdvice?.advice || '暂无建议';
+
   return (
     <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <CardContent sx={{ p: 0, flex: 1, display: 'flex', flexDirection: 'column' }}>
         {/* 综合建议区域 - 固定在顶部 */}
         <Box sx={{ p: 2, bgcolor: 'primary.50', borderBottom: 1, borderColor: 'divider' }}>
           <Typography variant="h5" component="h2" sx={{ mb: 1, fontWeight: 'bold' }}>
-            {comprehensiveAdvice.overall_signal}
+            {overall}
           </Typography>
           
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            {comprehensiveAdvice.advice}
+            {advice}
           </Typography>
 
           {/* 统计信息 - 紧凑布局 */}
           <Grid container spacing={1} sx={{ mb: 1 }}>
             <Grid item xs={3}>
               <Paper sx={{ p: 1, textAlign: 'center', bgcolor: 'success.main', color: 'white' }}>
-                <Typography variant="h6">{comprehensiveAdvice.statistics.buy_count}</Typography>
+                <Typography variant="h6">{stats.buy_count}</Typography>
                 <Typography variant="caption">买入</Typography>
               </Paper>
             </Grid>
             <Grid item xs={3}>
               <Paper sx={{ p: 1, textAlign: 'center', bgcolor: 'error.main', color: 'white' }}>
-                <Typography variant="h6">{comprehensiveAdvice.statistics.sell_count}</Typography>
+                <Typography variant="h6">{stats.sell_count}</Typography>
                 <Typography variant="caption">卖出</Typography>
               </Paper>
             </Grid>
             <Grid item xs={3}>
               <Paper sx={{ p: 1, textAlign: 'center', bgcolor: 'warning.main', color: 'white' }}>
-                <Typography variant="h6">{comprehensiveAdvice.statistics.hold_count}</Typography>
+                <Typography variant="h6">{stats.hold_count}</Typography>
                 <Typography variant="caption">观望</Typography>
               </Paper>
             </Grid>
             <Grid item xs={3}>
               <Paper sx={{ p: 1, textAlign: 'center', bgcolor: 'info.main', color: 'white' }}>
-                <Typography variant="h6">{comprehensiveAdvice.statistics.total_periods}</Typography>
+                <Typography variant="h6">{stats.total_periods}</Typography>
                 <Typography variant="caption">总周期</Typography>
               </Paper>
             </Grid>
@@ -695,14 +981,7 @@ const TradingSignals = ({ allSignals, comprehensiveAdvice, backtestResult }) => 
                       <Grid container spacing={1}>
                         {currentSignals.indicators && Object.entries(currentSignals.indicators).map(([key, value]) => (
                           <Grid item xs={6} key={key}>
-                            <Paper sx={{ p: 1, bgcolor: 'background.paper' }}>
-                              <Typography variant="caption" color="text.secondary">
-                                {key}
-                              </Typography>
-                              <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-                                {renderValue(value)}
-                              </Typography>
-                            </Paper>
+                            {renderIndicatorItem(key, value)}
                           </Grid>
                         ))}
                       </Grid>
@@ -741,7 +1020,7 @@ const TradingSignals = ({ allSignals, comprehensiveAdvice, backtestResult }) => 
                   </Box>
                   
                   <Collapse in={expandedSections.chip_distribution}>
-                    <Box sx={{ p: 1.5, pt: 0 }} onWheel={handleWheelEvent}>
+                    <Box sx={{ p: 1.5, pt: 0, bgcolor: '#000', color: '#fff' }} onWheel={handleWheelEvent}>
                       {renderChipDistribution()}
                     </Box>
                   </Collapse>
@@ -778,7 +1057,7 @@ const TradingSignals = ({ allSignals, comprehensiveAdvice, backtestResult }) => 
                   </Box>
                   
                   <Collapse in={expandedSections.fundamentals}>
-                    <Box sx={{ p: 1.5, pt: 0 }} onWheel={handleWheelEvent}>
+                    <Box sx={{ p: 1.5, pt: 0, bgcolor: '#000', color: '#fff' }} onWheel={handleWheelEvent}>
                       {renderFundamentalAnalysis()}
                     </Box>
                   </Collapse>
@@ -815,7 +1094,7 @@ const TradingSignals = ({ allSignals, comprehensiveAdvice, backtestResult }) => 
                   </Box>
                   
                   <Collapse in={expandedSections.pe_analysis}>
-                    <Box sx={{ p: 1.5, pt: 0 }} onWheel={handleWheelEvent}>
+                    <Box sx={{ p: 1.5, pt: 0, bgcolor: '#000', color: '#fff' }} onWheel={handleWheelEvent}>
                       {renderPEAnalysis()}
                     </Box>
                   </Collapse>
@@ -853,38 +1132,58 @@ const TradingSignals = ({ allSignals, comprehensiveAdvice, backtestResult }) => 
                   
                   <Collapse in={expandedSections.risk}>
                     <Box sx={{ p: 1.5, pt: 0 }} onWheel={handleWheelEvent}>
-                      {currentSignals.risk_assessment ? (
-                        <Grid container spacing={1}>
-                          <Grid item xs={6}>
-                            <Paper sx={{ p: 1, bgcolor: 'grey.50' }}>
-                              <Typography variant="caption" color="text.secondary">
-                                风险等级
-                              </Typography>
-                              <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-                                <Chip 
-                                  label={currentSignals.risk_assessment.risk_level || '未知'}
-                                  color={getRiskLevelColor(currentSignals.risk_assessment.risk_level)}
-                                  size="small"
-                                />
-                              </Typography>
-                            </Paper>
+                      {(() => {
+                        // 优先使用后端提供的风险评估；否则从基本面数据兜底；再否则根据信号类型推断
+                        const fa = currentSignals.fundamental_analysis || {};
+                        const fi = currentSignals.fundamental_indicators || {};
+                        const derived = (fa.risk_level || fa.risk_factors) ? {
+                          risk_level: fa.risk_level,
+                          risk_factors: fa.risk_factors
+                        } : (fi.risk_level || fi.risk_factors) ? {
+                          risk_level: fi.risk_level,
+                          risk_factors: fi.risk_factors
+                        } : null;
+
+                        let risk = currentSignals.risk_assessment || derived;
+                        if (!risk) {
+                          const st = currentSignals.signal_type || '';
+                          let level = '中';
+                          if (st.includes('强烈卖出')) level = '高';
+                          else if (st.includes('卖出')) level = '中';
+                          else if (st.includes('强烈买入')) level = '中';
+                          else if (st.includes('买入')) level = '低';
+                          risk = { risk_level: level, risk_factors: [] };
+                        }
+
+                        return (
+                          <Grid container spacing={1}>
+                            <Grid item xs={6}>
+                              <Paper sx={{ p: 1, bgcolor: '#000', color: '#fff' }}>
+                                <Typography variant="caption" sx={{ color: '#fff' }}>
+                                  风险等级
+                                </Typography>
+                                <Typography component="div" variant="body2" sx={{ fontWeight: 'medium' }}>
+                                  <Chip 
+                                    label={risk.risk_level || '未知'}
+                                    color={getRiskLevelColor(risk.risk_level)}
+                                    size="small"
+                                  />
+                                </Typography>
+                              </Paper>
+                            </Grid>
+                            <Grid item xs={6}>
+                              <Paper sx={{ p: 1, bgcolor: '#000', color: '#fff' }}>
+                                <Typography variant="caption" sx={{ color: '#fff' }}>
+                                  风险因子
+                                </Typography>
+                                <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                                  {Array.isArray(risk.risk_factors) && risk.risk_factors.length > 0 ? risk.risk_factors.join(', ') : '无'}
+                                </Typography>
+                              </Paper>
+                            </Grid>
                           </Grid>
-                          <Grid item xs={6}>
-                            <Paper sx={{ p: 1, bgcolor: 'grey.50' }}>
-                              <Typography variant="caption" color="text.secondary">
-                                风险因子
-                              </Typography>
-                              <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-                                {currentSignals.risk_assessment.risk_factors?.join(', ') || '无'}
-                              </Typography>
-                            </Paper>
-                          </Grid>
-                        </Grid>
-                      ) : (
-                        <Alert severity="info" sx={{ fontSize: '0.875rem' }}>
-                          暂无风险评估数据
-                        </Alert>
-                      )}
+                        );
+                      })()}
                     </Box>
                   </Collapse>
                 </Card>

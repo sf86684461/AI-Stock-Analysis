@@ -55,7 +55,8 @@ import { strategyAPI, stockAPI } from '../utils/api';
 function QuantitativeStrategies() {
   const [strategies, setStrategies] = useState([]);
   const [filteredStrategies, setFilteredStrategies] = useState([]);
-  const [selectedCategory, setSelectedCategory] = useState('全部');
+  const [selectedCategory, setSelectedCategory] = useState('all');
+
   const [expandedStrategy, setExpandedStrategy] = useState(null);
   const [configDialogOpen, setConfigDialogOpen] = useState(false);
   const [resultDialogOpen, setResultDialogOpen] = useState(false);
@@ -333,7 +334,7 @@ function QuantitativeStrategies() {
 
   // 策略过滤
   useEffect(() => {
-    if (selectedCategory === '全部') {
+    if (selectedCategory === 'all') {
       setFilteredStrategies(strategies);
     } else {
       setFilteredStrategies(strategies.filter(strategy => strategy.category === selectedCategory));
@@ -552,6 +553,7 @@ function QuantitativeStrategies() {
           {categories.map((category, index) => (
             <Tab
               key={category.value}
+              value={category.value}
               label={category.label}
               icon={index === 0 ? <Star /> : 
                    index === 1 ? <TrendingUp /> :
