@@ -78,12 +78,24 @@ fastApi.interceptors.response.use(
 
 // 智能交易信号获取：优先使用快速API，备用真实数据API
 export const fetchTradingSignals = async (stockCode) => {
-  console.log(`📊 获取交易信号: ${stockCode}`);
+  console.log(`📊 获取交易信号: ${stockCode}, 环境: ${IS_LOCAL ? '本地' : 'Vercel线上'}`);
   
-  // 1) 本地优先真实API；2) 线上直接使用快速API
+  // 快速响应API（同源 /api）- 优先使用 Mock API
+  try {
+    const fastResponse = await fastApi.get(`/api/trading-signals/${stockCode}`);
+    if (fastResponse.data.success && fastResponse.data.data) {
+      const convertedData = convertFastApiData(fastResponse.data.data, stockCode);
+      console.log('✅ Mock API 成功');
+      return convertedData;
+    }
+  } catch (error) {
+    console.warn('⚠️ Mock API 失败:', error.message);
+  }
+  
+  // 仅在本地环境才尝试真实数据API
   if (IS_LOCAL) {
     try {
-      console.log('🔥 [本地] 优先使用TuShare真实数据API...');
+      console.log('🔥 [本地] 尝试使用TuShare真实数据API...');
       // 兼容真实服务路径：优先 /api/trading-signals，失败回退 /trading_signals
       let response;
       try {
@@ -104,20 +116,12 @@ export const fetchTradingSignals = async (stockCode) => {
         const enhancedData = enhanceDataForBollinger(response.data);
         return enhancedData;
       }
-      throw new Error('真实数据API返回格式异常');
     } catch (error) {
-      console.warn('⚠️ 本地真实数据API获取失败，尝试快速API兜底:', error.message);
-      // 继续走快速API
+      console.warn('⚠️ 本地真实数据API也失败:', error.message);
     }
   }
-  // 快速响应API（同源 /api）
-  const fastResponse = await fastApi.get(`/api/trading-signals/${stockCode}`);
-  if (fastResponse.data.success && fastResponse.data.data) {
-    const convertedData = convertFastApiData(fastResponse.data.data, stockCode);
-    console.log('✅ 快速API成功');
-    return convertedData;
-  }
-  throw new Error('快速API返回格式异常');
+  
+  throw new Error('所有API都失败了');
 };
 
 // 增强TuShare数据以支持BOLL显示
@@ -360,47 +364,57 @@ export const stockAPI = {
   // 搜索股票 - 智能模糊搜索
   searchStocks: async (query, limit = 8) => {
     try {
-      console.log(`🔍 搜索股票: "${query}", 限制: ${limit}`);
+      console.log(`🔍 搜索股票: "${query}", 限制: ${limit}, 环境: ${IS_LOCAL ? '本地' : 'Vercel线上'}`);
+      
+      // 优先使用 Mock API 的 market-overview 进行关键词过滤
+      try {
+        const resp = await fastApi.post('/api/market-overview', {
+          page: 1,
+          page_size: Math.max(10, limit),
+          keyword: query,
+          real_data: true,
+          sort_field: 'score',
+          sort_order: 'desc'
+        }, { timeout: 60000 });
+        const stocks = (resp?.data?.data?.stocks || []).slice(0, limit).map(s => ({
+          code: s.code || (s.ts_code ? s.ts_code.split('.')[0] : ''),
+          ts_code: s.ts_code || '',
+          name: s.name || '',
+          market: s.market || '',
+          industry: s.industry || ''
+        }));
+        const mapped = {
+          success: true,
+          stocks,
+          total: (resp?.data?.data?.total != null) ? resp.data.data.total : stocks.length,
+          message: 'Mock API 搜索'
+        };
+        console.log('✅ Mock API 搜索成功:', mapped);
+        return mapped;
+      } catch (error) {
+        console.warn('⚠️ Mock API 搜索失败:', error?.message);
+      }
+      
+      // 仅在本地环境才尝试真实服务
       if (IS_LOCAL) {
         try {
-          // 本地优先真实服务 7001
           const response = await realDataApi.get('/api/search_stocks', {
             params: { q: query, limit }
           });
-          console.log('🔍 搜索结果(7001):', response.data);
+          console.log('🔍 真实API搜索结果:', response.data);
           return response.data;
         } catch (error) {
-          const status = error?.response?.status;
-          console.warn('⚠️ 7001 搜索失败，状态:', status, '消息:', error?.message);
-          // 继续走快速API
+          console.warn('⚠️ 本地真实API搜索也失败:', error?.message);
         }
       }
-      // 兜底：使用 5001 的 market-overview 进行关键词过滤并映射为搜索结果
-      const resp = await fastApi.post('/api/market-overview', {
-        page: 1,
-        page_size: Math.max(10, limit),
-        keyword: query,
-        real_data: true,
-        sort_field: 'score',
-        sort_order: 'desc'
-      }, { timeout: 60000 });
-      const stocks = (resp?.data?.data?.stocks || []).slice(0, limit).map(s => ({
-        code: s.code || (s.ts_code ? s.ts_code.split('.')[0] : ''),
-        ts_code: s.ts_code || '',
-        name: s.name || '',
-        market: s.market || '',
-        industry: s.industry || ''
-      }));
-      const mapped = {
-        success: true,
-        stocks,
-        total: (resp?.data?.data?.total != null) ? resp.data.data.total : stocks.length,
-        message: '快速API兜底搜索'
+      
+      return {
+        success: false,
+        stocks: [],
+        message: '搜索服务暂时不可用'
       };
-      console.log('✅ 5001 兜底搜索成功:', mapped);
-      return mapped;
     } catch (error) {
-      console.error('❌ 搜索兜底失败:', error?.message);
+      console.error('❌ 搜索失败:', error?.message);
       return {
         success: false,
         stocks: [],
@@ -603,18 +617,29 @@ export const strategyAPI = {
 
 // 全市场数据获取函数
 export const getMarketOverview = async (params) => {
-  console.log('🔍 正在获取全市场数据...', params);
-  // 本地优先真实服务；线上直接快速API
+  console.log('🔍 正在获取全市场数据...', params, '环境:', IS_LOCAL ? '本地' : 'Vercel线上');
+  
+  // 优先使用 Mock API
+  try {
+    const response = await fastApi.post('/api/market-overview', params, { timeout: 300000 });
+    console.log('✅ Mock API 市场数据获取成功');
+    return response;
+  } catch (error) {
+    console.warn('⚠️ Mock API 获取失败:', error.message);
+  }
+  
+  // 仅在本地环境才尝试真实服务
   if (IS_LOCAL) {
     try {
       const response = await realDataApi.post('/api/market-overview', params, { timeout: 300000 });
+      console.log('✅ 本地真实API 市场数据获取成功');
       return response;
     } catch (error) {
-      console.warn('⚠️ 本地真实服务获取失败，尝试快速API兜底:', error.message);
+      console.warn('⚠️ 本地真实API也失败:', error.message);
     }
   }
-  const response = await fastApi.post('/api/market-overview', params, { timeout: 300000 });
-  return response;
+  
+  throw new Error('所有API都失败了');
 };
 
 // 默认导出快速API实例
