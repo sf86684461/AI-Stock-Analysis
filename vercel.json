@@ -4,8 +4,8 @@
     { "src": "frontend/package.json", "use": "@vercel/static-build", "config": { "distDir": "build" } },
     { "src": "frontend/api/**/*.js", "use": "@vercel/node" }
   ],
-  "routes": [
-    { "src": "^/api(?:/.*)?$", "dest": "frontend/api/[[...slug]].js" },
-    { "src": "/(.*)", "dest": "/index.html" }
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "/frontend/api/[[...slug]].js" },
+    { "source": "/((?!api|.*\\..*).*)", "destination": "/index.html" }
   ]
 }
