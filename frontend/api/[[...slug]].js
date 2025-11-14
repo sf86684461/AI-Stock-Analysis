@@ -23,18 +23,19 @@ function json(res, data, status = 200) {
 module.exports = async (req, res) => {
   // Support both /api and nested paths via catch-all [[...slug]].js
   const method = (req.method || 'GET').toUpperCase();
-  // Resolve path robustly from slug or raw URL
+  // Resolve path robustly from slug or raw URL and normalize '/api' prefix
   let path = '/' + (Array.isArray(req.query.slug) ? req.query.slug.join('/') : (req.query.slug || ''));
-  if (!path || path === '/') {
-    const raw = (req.url || '').split('?')[0] || '';
-    if (raw) {
-      if (raw.startsWith('/api')) {
-        const trimmed = raw.slice(4);
-        path = trimmed || '/';
-      } else {
-        path = raw || '/';
-      }
+  const raw = (req.url || '').split('?')[0] || '';
+  // If raw URL starts with /api, prefer trimmed version
+  if (raw && raw.startsWith('/api')) {
+    const trimmed = raw.slice(4) || '/';
+    if (!path || path === '/' || path.startsWith('/api')) {
+      path = trimmed;
     }
+  }
+  // Always strip leading '/api' prefix if present after previous step
+  if (path.startsWith('/api')) {
+    path = path.slice(4) || '/';
   }
 
   try {

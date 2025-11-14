@@ -4,6 +4,7 @@ import axios from 'axios';
 const FAST_API_URL = '';
 // 运行环境检测：仅在本地才尝试 7001 真实服务
 const IS_LOCAL = (typeof window !== 'undefined') && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+const USE_FAST_API = !IS_LOCAL;
 
 // 创建统一的API实例（指向快速API服务）
 const apiInstance = axios.create({
@@ -81,15 +82,17 @@ export const fetchTradingSignals = async (stockCode) => {
   console.log(`📊 获取交易信号: ${stockCode}, 环境: ${IS_LOCAL ? '本地' : 'Vercel线上'}`);
   
   // 快速响应API（同源 /api）- 优先使用 Mock API
-  try {
-    const fastResponse = await fastApi.get(`/api/trading-signals/${stockCode}`);
-    if (fastResponse.data.success && fastResponse.data.data) {
-      const convertedData = convertFastApiData(fastResponse.data.data, stockCode);
-      console.log('✅ Mock API 成功');
-      return convertedData;
+  if (USE_FAST_API) {
+    try {
+      const fastResponse = await fastApi.get(`/api/trading-signals/${stockCode}`);
+      if (fastResponse.data.success && fastResponse.data.data) {
+        const convertedData = convertFastApiData(fastResponse.data.data, stockCode);
+        console.log('✅ Mock API 成功');
+        return convertedData;
+      }
+    } catch (error) {
+      console.warn('⚠️ Mock API 失败:', error.message);
     }
-  } catch (error) {
-    console.warn('⚠️ Mock API 失败:', error.message);
   }
   
   // 仅在本地环境才尝试真实数据API
@@ -341,20 +344,25 @@ export const checkApiHealth = async () => {
     console.log('❌ 快速API服务异常');
   }
   
-  try {
-    // 优先探测标准健康路由
-    await realDataApi.get('/api/health', { timeout: 5000 });
-    results.realDataApi = true;
-    console.log('✅ 真实数据API服务正常');
-  } catch (error) {
-    // 回退探测根路径
+  // 仅在本地环境才探测真实API
+  if (IS_LOCAL) {
     try {
-      await realDataApi.get('/', { timeout: 5000 });
+      // 优先探测标准健康路由
+      await realDataApi.get('/api/health', { timeout: 5000 });
       results.realDataApi = true;
-      console.log('✅ 真实数据API服务正常(根路径)');
-    } catch (error2) {
-      console.log('❌ 真实数据API服务异常');
+      console.log('✅ 真实数据API服务正常');
+    } catch (error) {
+      // 回退探测根路径
+      try {
+        await realDataApi.get('/', { timeout: 5000 });
+        results.realDataApi = true;
+        console.log('✅ 真实数据API服务正常(根路径)');
+      } catch (error2) {
+        console.log('❌ 真实数据API服务异常');
+      }
     }
+  } else {
+    results.realDataApi = false;
   }
   
   return results;
@@ -655,12 +663,7 @@ let apiHealthCache = {
 
 // 主动健康检查（更新缓存）
 export async function refreshApiHealth() {
-  try {
-    await realDataApi.get('/', { timeout: 3000 });
-    apiHealthCache.realOk = true;
-  } catch {
-    apiHealthCache.realOk = false;
-  }
+  // 先检测快速API（同源 /api/health）
   try {
     await fastApi.get('/api/health', { timeout: 3000 });
     apiHealthCache.fastOk = true;
